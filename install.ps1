@@ -22,7 +22,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 #>
 
-$gameFolder = "C:\Program Files (x86)\Steam\steamapps\common\BorderlandsGOTYEnhanced"
+function Show-Usage {
+  Write-Output "Usage: .\install.ps1 <path to BorderlandsGOTYEnhanced game folder>"
+  exit 1
+}
+
+if (-not $args[0]) {
+    Show-Usage
+}
+if (-not (Test-Path -Path $args[0])) {
+  Write-Output "Error: The path '$filePath' does not exist or is not valid."
+  Show-Usage
+}
+
+$gameFolder = $args[0]
 $gameSubFolder = "Binaries\Win64"
 $scriptsFolder = "scripts"
 $fullPath = "$gameFolder\$gameSubFolder\$scriptsFolder"

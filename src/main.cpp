@@ -70,7 +70,6 @@ YAML::Node config = YAML::LoadFile("BorderlandsGOTYEnhancedFix.yml");
 yml_t yml;
 
 float nativeAspectRatio = 16.0f / 9.0f;
-bool foxFixEnableHook1 = true;
 
 void logInit() {
     // spdlog initialisation
@@ -194,65 +193,34 @@ void resolutionFix() {
 }
 
 void fovFix() {
-    const char* patternFind0  = "F3 0F 11 ?? ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? 48 8B ?? ?? ?? 0F 28 ?? ?? ??";
-    uintptr_t hookOffset0 = 0;
-    const char* patternFind1  = "F3 0F 11 ?? ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? 89 ?? ?? ?? ?? ?? 48 83 ?? ?? 5B C3";
-    uintptr_t hookOffset1 = 0;
+    const char* patternFind  = "F3 0F 11 ?? ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? 89 ?? ?? ?? ?? ?? 48 83 ?? ?? 5B C3";
+    uintptr_t hookOffset = 0;
     const char* patternPatch = "";
     bool enableHook1 = true;
     bool enable = yml.masterEnable & yml.fix.fov.enable;
     LOG("Fix {}", enable ? "Enabled" : "Disabled");
-    if (enable) {
+    if (enable) { // Master FOV controller
         std::vector<uint64_t> addr;
-        Utils::patternScan(baseModule, patternFind0, &addr);
+        Utils::patternScan(baseModule, patternFind, &addr);
         uint8_t* hit = (uint8_t*)addr[0];
         uintptr_t absAddr = (uintptr_t)hit;
         uintptr_t relAddr = (uintptr_t)hit - (uintptr_t)baseModule;
         if (hit) {
-            LOG("Found '{}' @ 0x{:x}", patternFind0, relAddr);
-            uintptr_t hookAbsAddr = absAddr + hookOffset0;
-            uintptr_t hookRelAddr = relAddr + hookOffset0;
+            LOG("Found '{}' @ 0x{:x}", patternFind, relAddr);
+            uintptr_t hookAbsAddr = absAddr + hookOffset;
+            uintptr_t hookRelAddr = relAddr + hookOffset;
             static SafetyHookMid fovMidHook{};
             fovMidHook = safetyhook::create_mid(reinterpret_cast<void*>(hookAbsAddr),
                 [](SafetyHookContext& ctx) {
                     float pi = std::numbers::pi_v<float>;
                     float newFov = atanf((tanf(yml.fix.fov.value * pi / 360.0f) / nativeAspectRatio) * yml.resolution.aspectRatio) * 360.0f / pi;
-                    if (ctx.xmm6.f32[0] != 80.0f) {
-                        foxFixEnableHook1 = false;
-                    }
-                    ctx.xmm6.f32[0] = newFov;
+                    ctx.xmm0.f32[0] = newFov;
                 }
             );
-            LOG("Hooked @ 0x{:x} + 0x{:x} = 0x{:x}", relAddr, hookOffset0, hookRelAddr);
+            LOG("Hooked @ 0x{:x} + 0x{:x} = 0x{:x}", relAddr, hookOffset, hookRelAddr);
         }
         else {
-            LOG("Did not find '{}'", patternFind0);
-        }
-    }
-    if (enable) {
-        std::vector<uint64_t> addr;
-        Utils::patternScan(baseModule, patternFind1, &addr);
-        uint8_t* hit = (uint8_t*)addr[0];
-        uintptr_t absAddr = (uintptr_t)hit;
-        uintptr_t relAddr = (uintptr_t)hit - (uintptr_t)baseModule;
-        if (hit) {
-            LOG("Found '{}' @ 0x{:x}", patternFind1, relAddr);
-            uintptr_t hookAbsAddr = absAddr + hookOffset1;
-            uintptr_t hookRelAddr = relAddr + hookOffset1;
-            static SafetyHookMid fovMidHook{};
-            fovMidHook = safetyhook::create_mid(reinterpret_cast<void*>(hookAbsAddr),
-                [](SafetyHookContext& ctx) {
-                    if (foxFixEnableHook1) {
-                        float pi = std::numbers::pi_v<float>;
-                        float newFov = atanf((tanf(yml.fix.fov.value * pi / 360.0f) / nativeAspectRatio) * yml.resolution.aspectRatio) * 360.0f / pi;
-                        ctx.xmm0.f32[0] = newFov;
-                    }
-                }
-            );
-            LOG("Hooked @ 0x{:x} + 0x{:x} = 0x{:x}", relAddr, hookOffset1, hookRelAddr);
-        }
-        else {
-            LOG("Did not find '{}'", patternFind1);
+            LOG("Did not find '{}'", patternFind);
         }
     }
 }

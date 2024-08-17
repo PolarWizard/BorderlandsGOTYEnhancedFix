@@ -32,6 +32,7 @@ cmake --install .
 ![Demo](images/BorderlandsGOTYEnhancedFix_1.gif)
 
 ## Known Issues
+- FOV fix removes gameplay dynamics like the widening camera effect during running and the initial camera bounce when loading in
 - Wierd graphics artifacting on left side of screen if resolution exceeds 21:9
 - HUD is stretched above when resolution exceeds 16:9
 - Game will stretch image to fill screen if provided resolution is smaller than desktop resolution in fullscreen mode - **WILL NOT BE FIXED**

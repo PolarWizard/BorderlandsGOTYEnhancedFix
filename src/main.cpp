@@ -41,6 +41,7 @@
 // Local includes
 #include "utils.hpp"
 
+// Macros
 #define LOG(STRING, ...) spdlog::info("{} : " STRING, __func__, ##__VA_ARGS__)
 
 // .yml to struct
@@ -65,12 +66,23 @@ typedef struct yml_t {
     fix_t fix;
 } yml_t;
 
+// Globals
 HMODULE baseModule = GetModuleHandle(NULL);
 YAML::Node config = YAML::LoadFile("BorderlandsGOTYEnhancedFix.yml");
 yml_t yml;
 
 float nativeAspectRatio = 16.0f / 9.0f;
 
+/**
+ * @brief Initializes logging for the application.
+ *
+ * This function performs the following tasks:
+ * 1. Initializes the spdlog logging library and sets up a file logger.
+ * 2. Retrieves and logs the path and name of the executable module.
+ * 3. Logs detailed information about the module to aid in debugging.
+ *
+ * @return void
+ */
 void logInit() {
     // spdlog initialisation
     auto logger = spdlog::basic_logger_mt("BorderlandsGOTYEnhanced", "BorderlandsGOTYEnhancedFix.log");
@@ -90,6 +102,17 @@ void logInit() {
     LOG("Module Addr: 0x{:x}", (uintptr_t)baseModule);
 }
 
+
+/**
+ * @brief Reads and parses configuration settings from a YAML file.
+ *
+ * This function performs the following tasks:
+ * 1. Reads general settings from the configuration file and assigns them to the `yml` structure.
+ * 2. Initializes global settings if certain values are missing or default.
+ * 3. Logs the parsed configuration values for debugging purposes.
+ *
+ * @return void
+ */
 void readYml() {
     yml.name = config["name"].as<std::string>();
 
@@ -118,6 +141,62 @@ void readYml() {
     LOG("Fix.Fov.Value: {}", yml.fix.fov.value);
 }
 
+/**
+ * @brief Applies a resolution fix by hooking and patching specific memory patterns.
+ *
+ * This function performs the following tasks:
+ * 1. Logs the current desktop resolution and aspect ratio.
+ * 2. Places hooks at `patternFind0` and `patternFind1`.
+ * 3. Patches two memory addresses at `resWidthAddrPatch` and `resHeightAddrPatch`.
+ *
+ * @details
+ * The function first logs the desktop resolution and aspect ratio for debugging purposes.
+ * It places hooks at `patternFind0` and `patternFind1` where the RAX register shall be
+ * overwritten with the target width and height parameters in the configuration file. And will
+ * also patch two memory addresses at `resWidthAddrPatch` and `resHeightAddrPatch` also using the
+ * target width and height parameters in the configuration file.
+ *
+ * The hooking and patching is only performed if the `masterEnable` flag is set to `true`.
+ *
+ * How was this found?
+ * Hooking for `patternFind0` and `patternFind1`:
+ * The initial hooks in place were located when scanning for memory changes using cheat engine
+ * when resolution changes took place in the game. The game's binary used a lot of memory
+ * locations to store the new applied resolution. Each memory location was inspected to see
+ * what instruction was writing or accessing it and eventually and with enough back tracking
+ * I found where the resolution was converted from a string to a long value.
+ * The code would call `ucrtbase.wtol`, a function from the Universal C Runtime (UCRT) library
+ * in Windows from the ucrtbase.dll file. The `wtol` function is used to convert a wide-character
+ * string (i.e., a string of `wchar_t` characters, which are typically used for Unicode text)
+ * to a long integer. After the call to this function the long value would be placed in the RAX
+ * register and then the game would mov the value from the RAX register to the R15/R12 register
+ * for width/height respectively.
+ * Relevent code:
+ * Width:
+ * BorderlandsGOTY.exe+81E1EC : FF 15 CE790F01  call qword ptr [BorderlandsGOTY.exe+1915BC0] -> ucrtbase.wtol
+ * BorderlandsGOTY.exe+81E1F2 : 44 8B F8        mov r15d,eax
+ * Height:
+ * BorderlandsGOTY.exe+81E24E : FF 15 6C790F01  call qword ptr [BorderlandsGOTY.exe+1915BC0] -> ucrtbase.wtol
+ * BorderlandsGOTY.exe+81E254 : 44 8B E0        mov r12d,eax
+ *
+ * The hooks where placed where the move instruction takes place and eax was overwritten with the
+ * provided width and height parameters from the configuration file.
+ *
+ * This fix would not work right off the bat on game boot up. The user would need to apply some
+ * random resolution in game in order to get the target resolution injected in, this is inconvenient
+ * and annoying to do every time. After digging around the code to find where windows where being
+ * created and such I did manage to figure out certain things but nothing concrete on how the window
+ * was having its resolution applied. Initially the window would be brought up in the desktop
+ * resolution but would then later be resized to the target resolution provided in the launcher.
+ * After some trial and error mixed with experimentation it seems that the game's binary .data
+ * section allocates space for width and height, 4B each. So via cheat engine you can scan for
+ * the width and height parameters, and you will get some hits in binary. There is more than one
+ * but through testing I found that only 1 actually had any effect. So I went with that one at
+ * BorderlandsGOTY.exe+25E50A0 and 25E50A4, width and height respectively. Notice they are 4B
+ * apart.
+ *
+ * @return void
+ */
 void resolutionFix() {
     const char* patternFind0  = "44 8B ?? 41 8D ?? ?? 48 8B ?? ?? ?? FF 15 ?? ?? ?? ??";
     uintptr_t hookOffset0 = 0;
@@ -192,11 +271,60 @@ void resolutionFix() {
     }
 }
 
+/**
+ * @brief Applies a field of view (FOV) fix by hooking a specific pattern in memory.
+ *
+ * This function performs the following tasks:
+ * 1. Checks if the FOV fix is enabled based on the configuration.
+ * 2. Searches for a specific memory pattern in the base module.
+ * 3. Hooks the identified pattern to modify the FOV value.
+ *
+ * @details
+ * The function uses a pattern scan to find a specific byte sequence in the memory of the base module.
+ * If the pattern is found, a hook is created from the found pattern address. The hook modifies the FOV
+ * value by adjusting it according to the aspect ratio and desired FOV specified in the configuration.
+ *
+ * The hook function calculates the new FOV value using trigonometric functions based on the current
+ * aspect ratio and the desired FOV, then applies this new value to the appropriate register.
+ * NOTE: The FOV value specified in the configuration file will not be the actual FOV value that is applied,
+ * unless the aspect ratio is 16:9. Because of the game's use of vert- scaling the FOV needs to be adjusted
+ * so that the image emulates the FOV of 16:9.
+ *
+ * The memory for the FOV setting is dynamically allocated in the game's .bss section and is not present
+ * in the binary. Hence it cannot be patched with a byte write, and needs a hook so that it may be changed
+ * while in a register.
+ *
+ * FOV is stored multiple times across various addresses. When moving the slider in game, the FOV value,
+ * in hex form, manipulates 4 32-bit memory locations. And the FOV is not actually set until you exit
+ * out of the menu back into the game.
+ *
+ * Trying to write some of the locations you will quickly find out that there is code that constantly
+ * rewrites the FOV value with some master value. Through some trial and error and tracing what
+ * instructions access and write the locations we stumble some code that seems to be the master FOV
+ * controller.
+ * Relevent Code:
+ * BorderlandsGOTY.exe+143AD0F : F3 0F11 83 480F0000  movss [rbx+00000F48],xmm0
+ * BorderlandsGOTY.exe+143AD17 : 8B 88 D8030000       mov   ecx,[rax+000003D8]
+ * BorderlandsGOTY.exe+143AD1D : 89 8B 4C0F0000       mov   [rbx+00000F4C],ecx
+ * BorderlandsGOTY.exe+143AD23 : 48 83 C4 20          add   rsp,20
+ * BorderlandsGOTY.exe+143AD27 : 5B                   pop   rbx
+ * BorderlandsGOTY.exe+143AD28 : C3                   ret
+ *
+ * The register xmm0 contains the master value, so if we hook right there and change the value, it will
+ * fix the FOV throughout the whole game. There are downsides though. Firstly the game dynamically will
+ * tweak the FOV based on what is happening, ie if your running the game will increase this value, and
+ * if your loading into the game for the first time the game will tweak this value so the camera bounces
+ * around, finite impulse response. Those dynamics are now gone and the ingame FOV no longer works.
+ *
+ * TODO: The superior solution would be to find where the game sets vert- scaling and force it to do hor+
+ * scaling instead.
+ *
+ * @return void
+ */
 void fovFix() {
     const char* patternFind  = "F3 0F 11 ?? ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? 89 ?? ?? ?? ?? ?? 48 83 ?? ?? 5B C3";
     uintptr_t hookOffset = 0;
-    const char* patternPatch = "";
-    bool enableHook1 = true;
+
     bool enable = yml.masterEnable & yml.fix.fov.enable;
     LOG("Fix {}", enable ? "Enabled" : "Disabled");
     if (enable) { // Master FOV controller
@@ -225,6 +353,19 @@ void fovFix() {
     }
 }
 
+/**
+ * @brief Main function that initializes and applies various fixes.
+ *
+ * This function serves as the entry point for the DLL. It performs the following tasks:
+ * 1. Initializes the logging system.
+ * 2. Reads the configuration from a YAML file.
+ * 3. Sleeps for 1 second to give the game time to load up, fixes won't work otherwise.
+ * 3. Applies a resolution fix.
+ * 5. Applies a field of view (FOV) fix.
+ *
+ * @param lpParameter Unused parameter.
+ * @return Always returns TRUE to indicate successful execution.
+ */
 DWORD __stdcall Main(void*) {
     logInit();
     readYml();
@@ -234,6 +375,34 @@ DWORD __stdcall Main(void*) {
     return true;
 }
 
+/**
+ * @brief Entry point for a DLL, called by the system when the DLL is loaded or unloaded.
+ *
+ * This function handles various events related to the DLL's lifetime and performs actions
+ * based on the reason for the call. Specifically, it creates a new thread when the DLL is
+ * attached to a process.
+ *
+ * @details
+ * The `DllMain` function is called by the system when the DLL is loaded or unloaded. It handles
+ * different reasons for the call specified by `ul_reason_for_call`. In this implementation:
+ *
+ * - **DLL_PROCESS_ATTACH**: When the DLL is loaded into the address space of a process, it
+ *   creates a new thread to run the `Main` function. The thread priority is set to the highest,
+ *   and the thread handle is closed after creation.
+ *
+ * - **DLL_THREAD_ATTACH**: Called when a new thread is created in the process. No action is taken
+ *   in this implementation.
+ *
+ * - **DLL_THREAD_DETACH**: Called when a thread exits cleanly. No action is taken in this implementation.
+ *
+ * - **DLL_PROCESS_DETACH**: Called when the DLL is unloaded from the address space of a process.
+ *   No action is taken in this implementation.
+ *
+ * @param hModule Handle to the DLL module. This parameter is used to identify the DLL.
+ * @param ul_reason_for_call Indicates the reason for the call (e.g., process attach, thread attach).
+ * @param lpReserved Reserved for future use. This parameter is typically NULL.
+ * @return BOOL Always returns TRUE to indicate successful execution.
+ */
 BOOL APIENTRY DllMain(
     HMODULE hModule,
     DWORD  ul_reason_for_call,

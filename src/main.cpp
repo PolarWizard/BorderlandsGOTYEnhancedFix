@@ -366,7 +366,7 @@ void fovFix() {
  * @param lpParameter Unused parameter.
  * @return Always returns TRUE to indicate successful execution.
  */
-DWORD __stdcall Main(void*) {
+DWORD __stdcall Main(void* lpParameter) {
     logInit();
     readYml();
     Sleep(1000);

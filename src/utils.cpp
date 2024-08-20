@@ -26,11 +26,31 @@
 #include <vector>
 #include <format>
 #include <iostream>
+#include <cstdint>
 
 #include "utils.hpp"
 
 namespace Utils
 {
+    std::string getCompilerInfo() {
+#if defined(__GNUC__)
+        std::string compiler = "GCC - "
+            + std::to_string(__GNUC__) + "."
+            + std::to_string(__GNUC_MINOR__) + "."
+            + std::to_string(__GNUC_PATCHLEVEL__);
+#elif defined(__clang__)
+        std::string compiler = "Clang - "
+            + std::to_string(__clang_major__) + "."
+            + std::to_string(__clang_minor__) + "."
+            + std::to_string(__clang_patchlevel__);
+#elif defined(_MSC_VER)
+        std::string compiler = "MSVC - "
+            + std::to_string(_MSC_VER);
+#else
+        "UNKNOWN"
+#endif
+        return compiler;
+    }
 
     std::string bytesToString(void* bytes, size_t size) {
         std::string pattern;

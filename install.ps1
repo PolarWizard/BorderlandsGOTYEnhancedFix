@@ -23,16 +23,16 @@ SOFTWARE.
 #>
 
 function Show-Usage {
-  Write-Output "Usage: .\install.ps1 <path to BorderlandsGOTYEnhanced game folder>"
-  exit 1
+    Write-Output "Usage: .\install.ps1 <path to BorderlandsGOTYEnhanced game folder>"
+    exit 1
 }
 
 if (-not $args[0]) {
     Show-Usage
 }
 if (-not (Test-Path -Path $args[0])) {
-  Write-Output "Error: The path '$filePath' does not exist or is not valid."
-  Show-Usage
+    Write-Output "Error: The path '$filePath' does not exist or is not valid."
+    Show-Usage
 }
 
 $gameFolder = $args[0]
@@ -65,7 +65,7 @@ fixes:
 "@
 
 if (Test-Path -Path $gameFolder) {
-    $dllPath = Get-ChildItem -Path "$PSScriptRoot\build\Debug\*.dll" -Recurse
+    $dllPath = Get-ChildItem -Path "$PSScriptRoot\bin\*.dll" -Recurse
     Write-Output "Found DLL at $dllPath"
     New-Item -Path "$fullPath" -ItemType Directory -Force | Out-Null
     Write-Output "Copying DLL to $fullPath"

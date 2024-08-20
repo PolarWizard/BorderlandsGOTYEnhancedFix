@@ -31,6 +31,7 @@
 #include <numeric>
 #include <numbers>
 #include <cmath>
+#include <cstdint>
 
 // 3rd party includes
 #include "spdlog/spdlog.h"
@@ -97,11 +98,11 @@ void logInit() {
 
     // Log module details
     LOG("-------------------------------------");
+    LOG("Compiler: {:s}", Utils::getCompilerInfo().c_str());
     LOG("Module Name: {:s}", exeName.c_str());
     LOG("Module Path: {:s}", exeFilePath.string().c_str());
     LOG("Module Addr: 0x{:x}", (uintptr_t)baseModule);
 }
-
 
 /**
  * @brief Reads and parses configuration settings from a YAML file.
@@ -202,8 +203,15 @@ void resolutionFix() {
     uintptr_t hookOffset0 = 0;
     const char* patternFind1  = "FF 15 ?? ?? ?? ?? 44 8B ?? 45 8B ??";
     uintptr_t hookOffset1 = 6;
-    uint64_t resWidthAddrPatch  = (uintptr_t)baseModule + 0x25E50A0;
-    uint64_t resHeightAddrPatch = (uintptr_t)baseModule + 0x25E50A4;
+    std::vector<uintptr_t> resAddrPatch  = {
+        (uintptr_t)baseModule + 0x25E50A0,
+        (uintptr_t)baseModule + 0x25E5730,
+        (uintptr_t)baseModule + 0x25E5C68,
+        (uintptr_t)baseModule + 0x25E61A0,
+        (uintptr_t)baseModule + 0x25E66D8,
+        (uintptr_t)baseModule + 0x25E6974,
+        (uintptr_t)baseModule + 0x25E6C10,
+    };
 
     LOG("Desktop resolution: {}x{}",
         yml.resolution.width, yml.resolution.height
@@ -263,11 +271,11 @@ void resolutionFix() {
     if (enable) {
         std::string widthString = Utils::bytesToString((void*)&yml.resolution.width, sizeof(yml.resolution.width));
         std::string heightString = Utils::bytesToString((void*)&yml.resolution.height, sizeof(yml.resolution.height));
-
-        Utils::patch(resWidthAddrPatch, widthString.c_str());
-        LOG("Patched '{}' @ 0x{:x}", widthString, resWidthAddrPatch);
-        Utils::patch(resHeightAddrPatch, heightString.c_str());
-        LOG("Patched '{}' @ 0x{:x}", heightString, resHeightAddrPatch);
+        std::string resString = widthString + ' ' + heightString;
+        for (size_t i = 0; i < resAddrPatch.size(); i++) {
+            Utils::patch(resAddrPatch[i], resString.c_str());
+            LOG("Patched '{}' @ 0x{:x}", resString, resAddrPatch[i]);
+        }
     }
 }
 
@@ -359,7 +367,8 @@ void fovFix() {
  * This function serves as the entry point for the DLL. It performs the following tasks:
  * 1. Initializes the logging system.
  * 2. Reads the configuration from a YAML file.
- * 3. Sleeps for 1 second to give the game time to load up, fixes won't work otherwise.
+ * 3. Sleeps for 5 second to give the game time to load up, fixes won't work otherwise,
+ *      and patched resolution will be overwritten by the game.
  * 3. Applies a resolution fix.
  * 5. Applies a field of view (FOV) fix.
  *
@@ -369,7 +378,7 @@ void fovFix() {
 DWORD __stdcall Main(void* lpParameter) {
     logInit();
     readYml();
-    Sleep(1000);
+    Sleep(5000); // TODO: Find a better solution
     resolutionFix();
     fovFix();
     return true;

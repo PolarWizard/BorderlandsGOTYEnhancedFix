@@ -31,6 +31,21 @@
 namespace Utils
 {
     /**
+     * @brief Retrieves information about the compiler being used.
+     * @details This function returns a string containing the name and version of the
+     * compiler. It checks for several well-known compilers and formats the version
+     * information accordingly:
+     *
+     * - **GCC:** The version is formatted as "GCC - major.minor.patch".
+     * - **Clang:** The version is formatted as "Clang - major.minor.patch".
+     * - **MSVC:** The version is formatted as "MSVC - version number".
+     * - **Unknown Compiler:** If the compiler is not recognized, it returns "UNKNOWN".
+     *
+     * @return `std::string` containing the compiler name and version.
+     */
+    std::string getCompilerInfo();
+
+    /**
      * @brief Convert memory bytes into string representation
      * @details Converts the bytes pointed to by the `bytes` parameter into a string.
      *      The total number of bytes that will be converted is based on the `size`

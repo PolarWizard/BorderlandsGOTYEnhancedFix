@@ -3,3 +3,5 @@
 .vscode/
 # CMake build artifacts
 build/
+# CMake generated binaries
+bin/

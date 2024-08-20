@@ -13,16 +13,27 @@ Adds support for ultrawide resolutions and additional features.
 ```ps1
 git clone --recurse-submodules https://github.com/PolarWizard/BorderlandsGOTYEnhancedFix.git
 cd BorderlandsGOTYEnhancedFix; mkdir build; cd build
+# For a general build:
 cmake ..
 cmake --build .
 cmake --install .
+
+# For a release build:
+# Assumes Ninja and GCC are installed.
+cmake -GNinja .. -DGCC_RELEASE=ON
+cmake --build . --config Release
+cmake --install .
+```
 ```
 `cmake ..` will attempt to find the game folder in `C:/Program Files (x86)/Steam/steamapps/common/`. If the game folder cannot be found rerun the command providing the path to the game folder:<br>`cmake .. -DGAME_FOLDER="<FULL-PATH-TO-GAME-FOLDER>"`
 
 2. Download [winmm.dll](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) x64 version
 3. Extract to `BorderlandsGOTYEnhanced/Binaries/Win64`
 
-### Using Release Candidate
+#### Why does release build use GCC?
+MSVC and Clang in MSVC mode default to linking against the Microsoft C++ runtime libraries (`vcruntime*.dll` and `msvcp*.dll` when using Visual Studio 2022), which can create dependency issues when distributing the compiled binaries. By using GCC it allows you to statically link `libgcc` and `libstdc++`, which means the runtime components are included directly in your executable. This makes things easier as you are no longer dependent on Microsoft external DLLs, which may or may not be present on the target system, making the application more portable and accessible for users.
+
+### Using Release
 1. Download and follow instructions in [latest release](https://github.com/PolarWizard/BorderlandsGOTYEnhancedFix/releases)
 
 ## Configuration

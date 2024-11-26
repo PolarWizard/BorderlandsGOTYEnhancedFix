@@ -43,7 +43,7 @@
 #include "utils.hpp"
 
 // Defines
-#define VERSION "3.0.0"
+#define VERSION "2.0.0"
 
 // Macros
 #define LOG(STRING, ...) spdlog::info("{} : " STRING, __func__, ##__VA_ARGS__)

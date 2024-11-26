@@ -22,9 +22,6 @@
 
 cmake_minimum_required(VERSION 3.28)
 
-# Options
-option(GCC_RELEASE "Make GCC Release" OFF)
-
 # Variables
 set(PROJECT_NAME BorderlandsGOTYEnhancedFix)
 set(DEFAULT_GAME_FOLDER "C:/Program Files (x86)/Steam/steamapps/common/BorderlandsGOTYEnhanced")
@@ -35,17 +32,8 @@ else()
     message(FATAL_ERROR "Bad game folder provided: ${GAME_FOLDER}")
 endif()
 
-if (GCC_RELEASE)
-    message(STATUS "Configured for GCC Release")
-    set(CMAKE_BUILD_TYPE Release)
-    set(CMAKE_STATIC_LIBRARY_PREFIX_CXX "")
-    set(CMAKE_C_COMPILER gcc)
-    set(CMAKE_CXX_COMPILER g++)
-    set(CMAKE_CXX_STANDARD 23)
-    set(CMAKE_CXX_STANDARD_REQUIRED True)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s -static-libgcc -static-libstdc++")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s -static-libgcc -static-libstdc++")
-endif()
+# Force all MSVC Runtimes to be linked statically into DLL
+set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
 
 # Set the project name and version
 project(${PROJECT_NAME} VERSION 1.0)

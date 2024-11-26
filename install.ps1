@@ -59,6 +59,7 @@ fixes:
 
   # If enabled FOV will be dynamically fixed to scale correctly with chosen resolution.
   # Default FOV is 90.
+  # MAKE SURE TO SET IN GAME FOV TO 120!!!
   fov:
     enable: true
     value: 90

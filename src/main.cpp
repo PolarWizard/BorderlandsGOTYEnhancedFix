@@ -42,6 +42,9 @@
 // Local includes
 #include "utils.hpp"
 
+// Defines
+#define VERSION "3.0.0"
+
 // Macros
 #define LOG(STRING, ...) spdlog::info("{} : " STRING, __func__, ##__VA_ARGS__)
 
@@ -86,7 +89,7 @@ float nativeAspectRatio = 16.0f / 9.0f;
  */
 void logInit() {
     // spdlog initialisation
-    auto logger = spdlog::basic_logger_mt("BorderlandsGOTYEnhanced", "BorderlandsGOTYEnhancedFix.log");
+    auto logger = spdlog::basic_logger_mt("BorderlandsGOTYEnhanced", "BorderlandsGOTYEnhancedFix.log", true);
     spdlog::set_default_logger(logger);
     spdlog::flush_on(spdlog::level::debug);
 
@@ -99,6 +102,8 @@ void logInit() {
     // Log module details
     LOG("-------------------------------------");
     LOG("Compiler: {:s}", Utils::getCompilerInfo().c_str());
+    LOG("Compiled: {:s} at {:s}", __DATE__, __TIME__);
+    LOG("Version: {:s}", VERSION);
     LOG("Module Name: {:s}", exeName.c_str());
     LOG("Module Path: {:s}", exeFilePath.string().c_str());
     LOG("Module Addr: 0x{:x}", (uintptr_t)baseModule);
@@ -183,6 +188,15 @@ void readYml() {
  * The hooks where placed where the move instruction takes place and eax was overwritten with the
  * provided width and height parameters from the configuration file.
  *
+ * Hooking for `patternFind2`:
+ * Going beyond 21:9 is problematic as it introduces some artifacting to the left of the screen
+ * which is a copy of what is on the right side of the screen. I can probably say this is some
+ * mathematical oversight as the devs couldn't forsee in 2009 that people would be trying to play
+ * this game in resolutions like 32:9, so whatever is happening code side is mostly a math error
+ * that stems from being at 32:9 and beyond. I don't exactly understand why hooking here and
+ * slightly changing the value in rax register would fix the issue, but it works and the artifacting
+ * is gone and there are no visible anomalies by doing this.
+ *
  * This fix would not work right off the bat on game boot up. The user would need to apply some
  * random resolution in game in order to get the target resolution injected in, this is inconvenient
  * and annoying to do every time. After digging around the code to find where windows where being
@@ -203,6 +217,8 @@ void resolutionFix() {
     uintptr_t hookOffset0 = 0;
     const char* patternFind1  = "FF 15 ?? ?? ?? ?? 44 8B ?? 45 8B ??";
     uintptr_t hookOffset1 = 6;
+    const char* patternFind2  = "CC    8B 81 A0 00 00 00    C3    CC";
+    uintptr_t hookOffset2 = 7;
     std::vector<uintptr_t> resAddrPatch  = {
         (uintptr_t)baseModule + 0x25E50A0,
         (uintptr_t)baseModule + 0x25E5730,
@@ -269,6 +285,28 @@ void resolutionFix() {
         }
     }
     if (enable) {
+        std::vector<uint64_t> addr;
+        Utils::patternScan(baseModule, patternFind2, &addr);
+        uint8_t* hit = (uint8_t*)addr[0];
+        uintptr_t absAddr = (uintptr_t)hit;
+        uintptr_t relAddr = (uintptr_t)hit - (uintptr_t)baseModule;
+        if (hit) {
+            LOG("Found '{}' @ 0x{:x}", patternFind2, relAddr);
+            uintptr_t hookAbsAddr = absAddr + hookOffset2;
+            uintptr_t hookRelAddr = relAddr + hookOffset2;
+            static SafetyHookMid fovMidHook{};
+            fovMidHook = safetyhook::create_mid(reinterpret_cast<void*>(hookAbsAddr),
+                [](SafetyHookContext& ctx) {
+                    ctx.rax = yml.resolution.height + 0x1;
+                }
+            );
+            LOG("Hooked @ 0x{:x} + 0x{:x} = 0x{:x}", relAddr, hookOffset2, hookRelAddr);
+        }
+        else {
+            LOG("Did not find '{}'", patternFind2);
+        }
+    }
+    if (enable) {
         std::string widthString = Utils::bytesToString((void*)&yml.resolution.width, sizeof(yml.resolution.width));
         std::string heightString = Utils::bytesToString((void*)&yml.resolution.height, sizeof(yml.resolution.height));
         std::string resString = widthString + ' ' + heightString;
@@ -319,10 +357,13 @@ void resolutionFix() {
  * BorderlandsGOTY.exe+143AD28 : C3                   ret
  *
  * The register xmm0 contains the master value, so if we hook right there and change the value, it will
- * fix the FOV throughout the whole game. There are downsides though. Firstly the game dynamically will
- * tweak the FOV based on what is happening, ie if your running the game will increase this value, and
- * if your loading into the game for the first time the game will tweak this value so the camera bounces
- * around, finite impulse response. Those dynamics are now gone and the ingame FOV no longer works.
+ * fix the FOV throughout the whole game. The FOV calculations in this game are not only complex, but
+ * also happen indiscriminently in different parts of the game depending on the context. Given this
+ * information, the fix needs to assume certain things firstly the user has maxed out the in game FOV.
+ * Why maxed out? Simply this is the max FOV the game allows before the camera starts to break with the
+ * finite impulse response oscillation when loading into the game for the first time for example. Anyhow
+ * we can mimic by doing (currentFov / 120.0f) and multiplying user specified FOV in the config file,
+ * and we have something close to what the actual in game FOV would be, bells and whistles attached.
  *
  * TODO: The superior solution would be to find where the game sets vert- scaling and force it to do hor+
  * scaling instead.
@@ -350,6 +391,8 @@ void fovFix() {
                 [](SafetyHookContext& ctx) {
                     float pi = std::numbers::pi_v<float>;
                     float newFov = atanf((tanf(yml.fix.fov.value * pi / 360.0f) / nativeAspectRatio) * yml.resolution.aspectRatio) * 360.0f / pi;
+                    // Scale FOV based on current FOV stored and using ingame FOV of 120.0f
+                    newFov *= (ctx.xmm0.f32[0] / 120.0f);
                     ctx.xmm0.f32[0] = newFov;
                 }
             );

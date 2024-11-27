@@ -43,7 +43,7 @@
 #include "utils.hpp"
 
 // Defines
-#define VERSION "2.0.0"
+#define VERSION "2.1.0"
 
 // Macros
 #define LOG(STRING, ...) spdlog::info("{} : " STRING, __func__, ##__VA_ARGS__)
@@ -63,11 +63,21 @@ typedef struct fix_t {
     fov_t fov;
 } fix_t;
 
+typedef struct scaleSprintFov_t {
+    bool enable;
+    float value;
+} scaleSprintFov_t;
+
+typedef struct feature_t {
+    scaleSprintFov_t scaleSprintFov;
+} feature_t;
+
 typedef struct yml_t {
     std::string name;
     bool masterEnable;
     resolution_t resolution;
     fix_t fix;
+    feature_t feature;
 } yml_t;
 
 // Globals
@@ -76,6 +86,12 @@ YAML::Node config = YAML::LoadFile("BorderlandsGOTYEnhancedFix.yml");
 yml_t yml;
 
 float nativeAspectRatio = 16.0f / 9.0f;
+
+/*
+ * As stated in the yml file, the fov in game must be set to 120.0f.
+ * We always assume that the ingame FOV is 120.0f.
+ */
+float inGameSetFov = 120.0f;
 
 /**
  * @brief Initializes logging for the application.
@@ -130,6 +146,9 @@ void readYml() {
     yml.fix.fov.enable = config["fixes"]["fov"]["enable"].as<bool>();
     yml.fix.fov.value = config["fixes"]["fov"]["value"].as<float>();
 
+    yml.feature.scaleSprintFov.enable = config["features"]["scaleSprintFov"]["enable"].as<bool>();
+    yml.feature.scaleSprintFov.value = config["features"]["scaleSprintFov"]["value"].as<float>();
+
     // Initialize globals
     if (yml.resolution.width == 0 || yml.resolution.height == 0) {
         std::pair<int, int> dimensions = Utils::GetDesktopDimensions();
@@ -145,6 +164,8 @@ void readYml() {
     LOG("Resolution.AspectRatio: {}", yml.resolution.aspectRatio);
     LOG("Fix.Fov.Enable: {}", yml.fix.fov.enable);
     LOG("Fix.Fov.Value: {}", yml.fix.fov.value);
+    LOG("Fix.Fov.Enable: {}", yml.feature.scaleSprintFov.enable);
+    LOG("Fix.Fov.Value: {}", yml.feature.scaleSprintFov.value);
 }
 
 /**
@@ -391,8 +412,7 @@ void fovFix() {
                 [](SafetyHookContext& ctx) {
                     float pi = std::numbers::pi_v<float>;
                     float newFov = atanf((tanf(yml.fix.fov.value * pi / 360.0f) / nativeAspectRatio) * yml.resolution.aspectRatio) * 360.0f / pi;
-                    // Scale FOV based on current FOV stored and using ingame FOV of 120.0f
-                    newFov *= (ctx.xmm0.f32[0] / 120.0f);
+                    newFov *= (ctx.xmm0.f32[0] / inGameSetFov);
                     ctx.xmm0.f32[0] = newFov;
                 }
             );
@@ -405,15 +425,100 @@ void fovFix() {
 }
 
 /**
- * @brief Main function that initializes and applies various fixes.
+ * @brief Feature that will scale the sprint FOV value based on the user provided value in the config file.
+ *
+ * This function performs the following tasks:
+ * 1. Checks if the scaleSprintFov feature is enabled based on the configuration.
+ * 2. Searches for a specific memory pattern in the base module.
+ * 3. Hooks the identified pattern so that the sprint FOV is scaled.
+ *
+ * @details
+ * The function uses a pattern scan to find a specific byte sequence in the memory of the base module.
+ * If the pattern is found, a hook is created from the found pattern address. The hook modifies the sprint
+ * FOV value by multiplying it with the user-provided scale factor and storing the modified value back
+ * into xmm0.
+ *
+ * The hook function calculates the FOV delta value by first taking the difference between the current
+ * sprint FOV held in xmm0 and the hardcoded value 120.0f. As specified in the configuration the in game
+ * FOV should be maxed to 120.0f and this hook makes the assumption that the user has done that, if the
+ * user has not then undefined behavior will occur. After getting the delta FOV value it is multiplied by
+ * the user-provided scale factor from the configuration file and added to the hardcoded 120.0f value.
+ *
+ * This hook location will always get triggered before the FOV fix hook triggers later in the code, that is
+ * why we can use the hardcoded 120.0f value here instead of the user specified FOV value. The translation
+ * from this FOV value to the user specified FOV value is done in the FOV fix hook, which is executed later.
+ *
+ * How was this found?
+ * The game keeps track of multiple FOV values based on what the current action being performed is:
+ * sprinting, zooming in weapons, etc. Each one of these events has its own FOV value in memory and based
+ * on what the current action being performed the game will use that FOV value for the camera.
+ *
+ * After inspecting memory values using cheat engine there were only a select few locations that responded
+ * when the you were sprinting in game from there you could easily see what code was accessing those
+ * locations and lo and behold the the one place that accessed it was called by the main FOV function
+ * which would load the correct FOV into the master memory location based on the current action being performed
+ * in game.
+ *
+ * Relevent code:
+ *
+ * 1. BorderlandsGOTY.exe+5B6B50 : 48 8B C1             mov rax,rcx
+ * 2. BorderlandsGOTY.exe+5B6B53 : 48 8B 89 D4060000    mov rcx,[rcx+000006D4]
+ * 3. BorderlandsGOTY.exe+5B6B5A : 48 85 C9             test rcx,rcx
+ * 4. BorderlandsGOTY.exe+5B6B5D : 74 0A                je BorderlandsGOTY.exe+5B6B69
+ * 5. BorderlandsGOTY.exe+5B6B5F : 48 8B 01             mov rax,[rcx]
+ * 6. BorderlandsGOTY.exe+5B6B62 : 48 FF A0 D0070000    jmp qword ptr [rax+000007D0]
+ * 7. BorderlandsGOTY.exe+5B6B69 : F3 0F10 80 3C070000  movss xmm0,[rax+0000073C]
+ * 8. BorderlandsGOTY.exe+5B6B71 : C3                   ret
+ *
+ * In this tiny snippet of code which is the whole function, whenever the jump on line 4. is taken to line
+ * line 7. that means that the game will load the sprint FOV into xmm0. On line 8. a hook is placed where
+ * the sprint FOV value will be modified.
+ *
+ * @return void
+ */
+void scaleSprintFovFeature() {
+    const char* patternFind  = "F3 0F 10 80 3C 07 00 00    C3    CC";
+    uintptr_t hookOffset = 8;
+
+    bool enable = yml.masterEnable & yml.feature.scaleSprintFov.enable;
+    LOG("Feature {}", enable ? "Enabled" : "Disabled");
+    if (enable) {
+        std::vector<uint64_t> addr;
+        Utils::patternScan(baseModule, patternFind, &addr);
+        uint8_t* hit = (uint8_t*)addr[0];
+        uintptr_t absAddr = (uintptr_t)hit;
+        uintptr_t relAddr = (uintptr_t)hit - (uintptr_t)baseModule;
+        if (hit) {
+            LOG("Found '{}' @ 0x{:x}", patternFind, relAddr);
+            uintptr_t hookAbsAddr = absAddr + hookOffset;
+            uintptr_t hookRelAddr = relAddr + hookOffset;
+            static SafetyHookMid fovMidHook{};
+            fovMidHook = safetyhook::create_mid(reinterpret_cast<void*>(hookAbsAddr),
+                [](SafetyHookContext& ctx) {
+                    float deltaFov = (ctx.xmm0.f32[0] - inGameSetFov);
+                    LOG("{}", deltaFov);
+                    ctx.xmm0.f32[0] = inGameSetFov + (deltaFov * yml.feature.scaleSprintFov.value);
+                }
+            );
+            LOG("Hooked @ 0x{:x} + 0x{:x} = 0x{:x}", relAddr, hookOffset, hookRelAddr);
+        }
+        else {
+            LOG("Did not find '{}'", patternFind);
+        }
+    }
+}
+
+/**
+ * @brief Main function that initializes and applies various fixes and features.
  *
  * This function serves as the entry point for the DLL. It performs the following tasks:
  * 1. Initializes the logging system.
  * 2. Reads the configuration from a YAML file.
  * 3. Sleeps for 5 second to give the game time to load up, fixes won't work otherwise,
  *      and patched resolution will be overwritten by the game.
- * 3. Applies a resolution fix.
+ * 4. Applies a resolution fix.
  * 5. Applies a field of view (FOV) fix.
+ * 6. Applies the scaleSprintFov feature.
  *
  * @param lpParameter Unused parameter.
  * @return Always returns TRUE to indicate successful execution.
@@ -422,8 +527,11 @@ DWORD __stdcall Main(void* lpParameter) {
     logInit();
     readYml();
     Sleep(5000); // TODO: Find a better solution
+    // Fixes
     resolutionFix();
     fovFix();
+    // Features
+    scaleSprintFovFeature();
     return true;
 }
 

@@ -63,6 +63,22 @@ fixes:
   fov:
     enable: true
     value: 90
+
+# Available features
+features:
+
+  # Explanation:
+  #   When sprinting the game pulls back the camera, essentially increasing the FOV, and gives
+  #   the camera a fisheye effect. At lower FOV values the fisheye effect is less pronounced,
+  #   but at higher FOV values the fisheye effect is more pronounced. This feature aims to
+  #   address that by letting users adjust how pulled back the camera will become when sprinting.
+  # value:
+  #   < 1.0 : sprint FOV increase is descreased by that percentage
+  #   = 1.0 : sprint FOV stays vanilla
+  #   > 1.0 : sprint FOV increase is increased by that percentage
+  scaleSprintFov:
+    enable: false
+    value: 1.0
 "@
 
 if (Test-Path -Path $gameFolder) {

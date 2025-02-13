@@ -1,4 +1,6 @@
 # Borderlands GOTY Enhanced Fix
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/PolarWizard/BorderlandsGOTYEnhancedFix/total)
+
 Adds support for ultrawide resolutions and additional features.
 
 ***This project is designed exclusively for Windows due to its reliance on Windows-specific APIs. The build process requires the use of PowerShell.***
@@ -34,7 +36,6 @@ cmake --install .
 ## Known Issues
 - ~~FOV fix removes gameplay dynamics like the widening camera effect during running and the initial camera bounce when loading in~~ - **FIXED IN v3.0.0**
 - ~~Wierd graphics artifacting on left side of screen if resolution exceeds 21:9~~ - **FIXED IN v3.0.0**
-- HUD is stretched above when resolution exceeds 16:9 - **WILL NOT BE FIXED**
 - Game will stretch image to fill screen if provided resolution is smaller than desktop resolution in fullscreen mode - **WILL NOT BE FIXED**
 - Changing resolution and fullscreen settings ingame will break fix - **WILL NOT BE FIXED**
 
